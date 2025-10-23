@@ -1,4 +1,3 @@
-// --- Configuración inicial ---
 const scene = new THREE.Scene()
 const camera = new THREE.PerspectiveCamera(
   95,
@@ -10,25 +9,10 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
-// --- Input de carga de imágenes ---
-const fileInput = document.createElement("input")
-fileInput.type = "file"
-fileInput.multiple = true
-fileInput.accept = "image/*"
-fileInput.style.position = "absolute"
-fileInput.style.top = "20px"
-fileInput.style.left = "20px"
-fileInput.style.zIndex = "10"
-fileInput.style.background = "#fff"
-fileInput.style.padding = "6px"
-fileInput.style.borderRadius = "6px"
-fileInput.style.cursor = "pointer"
-document.body.appendChild(fileInput)
-
 // --- Panel de sliders ---
 const controlPanel = document.createElement("div")
 controlPanel.style.position = "absolute"
-controlPanel.style.top = "70px"
+controlPanel.style.top = "300px"
 controlPanel.style.left = "20px"
 controlPanel.style.zIndex = "10"
 controlPanel.style.background = "rgba(255,255,255,0.9)"
@@ -69,14 +53,17 @@ function createSlider(labelText, min, max, value, step, callback) {
 let sphereParams = {
   radius: 1000,
   widthScale: 1,
+  depthScale: 1,
   heightScale: 1,
 }
 
-let spheres = []
-let currentSphere = 0
-const textureLoader = new THREE.TextureLoader()
+let sphereImage = null
+let cubeImages = { adelante: null, atras: null, izquierda: null, derecha: null }
+
 let inside = false
 let currentShape = "sphere" // "sphere" o "cube"
+
+const textureLoader = new THREE.TextureLoader()
 
 // --- Posiciones de cámara ---
 const insidePos = new THREE.Vector3(0, 0, 0)
@@ -91,18 +78,167 @@ const material = new THREE.MeshBasicMaterial({ color: 0xffffff })
 const sphere = new THREE.Mesh(geometry, material)
 scene.add(sphere)
 
-// --- Cargar imágenes ---
-fileInput.addEventListener("change", (event) => {
-  const files = Array.from(event.target.files)
-  spheres = []
-  files.forEach((file) => {
+// --- Inputs de carga ---
+// Contenedor visual para inputs
+const inputContainer = document.createElement("div")
+inputContainer.style.position = "absolute"
+inputContainer.style.top = "20px"
+inputContainer.style.left = "20px"
+inputContainer.style.zIndex = "10"
+inputContainer.style.background = "rgba(255,255,255,0.9)"
+inputContainer.style.padding = "10px"
+inputContainer.style.borderRadius = "8px"
+inputContainer.style.width = "200px"
+inputContainer.style.fontFamily = "sans-serif"
+inputContainer.style.fontSize = "14px"
+document.body.appendChild(inputContainer)
+
+// Input esfera
+const sphereLabel = document.createElement("label")
+sphereLabel.innerText = "Imagen esfera"
+sphereLabel.style.display = "block"
+sphereLabel.style.marginTop = "6px"
+const sphereInput = document.createElement("input")
+sphereInput.type = "file"
+sphereInput.accept = "image/*"
+sphereInput.style.display = "block"
+sphereInput.style.marginBottom = "6px"
+sphereLabel.appendChild(sphereInput)
+inputContainer.appendChild(sphereLabel)
+
+// Inputs cubo
+const cubeLabels = ["Adelante", "Atrás", "Izquierda", "Derecha"]
+const cubeInputs = {}
+cubeLabels.forEach((label) => {
+  const lbl = document.createElement("label")
+  lbl.innerText = label
+  lbl.style.display = "block"
+  lbl.style.marginTop = "6px"
+  const input = document.createElement("input")
+  input.type = "file"
+  input.accept = "image/*"
+  input.style.display = "block"
+  lbl.appendChild(input)
+  inputContainer.appendChild(lbl)
+  cubeInputs[label.toLowerCase()] = input
+})
+
+// --- Eventos de carga ---
+sphereInput.addEventListener("change", (e) => {
+  const file = e.target.files[0]
+  if (file) {
     const reader = new FileReader()
-    reader.onload = (e) => {
-      spheres.push(e.target.result)
-      if (spheres.length === 1) rebuildGeometry()
+    reader.onload = (ev) => {
+      sphereImage = ev.target.result
+      rebuildGeometry()
     }
     reader.readAsDataURL(file)
+  }
+})
+
+Object.entries(cubeInputs).forEach(([side, input]) => {
+  input.addEventListener("change", (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        cubeImages[side] = ev.target.result
+        rebuildGeometry()
+      }
+      reader.readAsDataURL(file)
+    }
   })
+})
+
+// --- Reconstruir geometría ---
+function rebuildGeometry() {
+  sphere.geometry.dispose()
+
+  if (currentShape === "sphere") {
+    geometry = new THREE.SphereGeometry(sphereParams.radius, 60, 40)
+    inside ? geometry.scale(-1, 1, 1) : geometry.scale(1, 1, 1)
+    sphere.geometry = geometry
+
+    // Crear un nuevo material para la esfera
+    const mat = new THREE.MeshBasicMaterial({
+      side: inside ? THREE.FrontSide : THREE.BackSide,
+    })
+
+    if (sphereImage) {
+      mat.map = textureLoader.load(sphereImage)
+    } else {
+      mat.color.set(0xffffff)
+    }
+
+    sphere.material = mat
+    sphere.material.side = inside ? THREE.FrontSide : THREE.BackSide
+  } else if (currentShape === "cube") {
+    const size = sphereParams.radius
+    const scaledX = size * sphereParams.widthScale
+    const scaledY = size * sphereParams.heightScale
+    const scaledZ = size * sphereParams.depthScale
+    geometry = new THREE.BoxGeometry(scaledX, scaledY, scaledZ)
+
+    const cubeMaterials = []
+    for (let i = 0; i < 6; i++) {
+      let mat
+      if (i === 2 || i === 3) {
+        mat = new THREE.MeshBasicMaterial({
+          color: 0xcccccc,
+          side: inside ? THREE.BackSide : THREE.FrontSide,
+        })
+      } else {
+        let texSrc = null
+        if (i === 4) texSrc = cubeImages.adelante
+        if (i === 5) texSrc = cubeImages.atras
+        if (i === 1) texSrc = cubeImages.izquierda
+        if (i === 0) texSrc = cubeImages.derecha
+
+        const texture = texSrc ? textureLoader.load(texSrc) : null
+        mat = new THREE.MeshBasicMaterial({
+          map: texture,
+          color: texture ? 0xffffff : 0x999999,
+          side: inside ? THREE.BackSide : THREE.FrontSide,
+        })
+      }
+      cubeMaterials.push(mat)
+    }
+
+    sphere.material = cubeMaterials
+    sphere.geometry = geometry
+    scene.background = null
+
+    if (inside) {
+      const uvAttr = geometry.attributes.uv
+      for (let i = 0; i < uvAttr.count; i++) {
+        uvAttr.setX(i, 1 - uvAttr.getX(i))
+      }
+      uvAttr.needsUpdate = true
+    }
+  }
+
+  sphere.material.needsUpdate = true
+}
+
+// --- Sliders ---
+createSlider("Radio", 500, 2000, sphereParams.radius, 50, (val) => {
+  sphereParams.radius = val
+  rebuildGeometry()
+  if (inside) {
+    const ratio = val / 1000
+    camera.fov = 95 * ratio
+    camera.fov = Math.max(60, Math.min(130, camera.fov))
+    camera.updateProjectionMatrix()
+  }
+})
+createSlider("Ancho (X)", 0.5, 4, sphereParams.widthScale, 0.05, (val) => {
+  sphereParams.widthScale = val
+  sphereParams.depthScale = val
+  rebuildGeometry()
+})
+createSlider("Alto (Y)", 0.5, 4, sphereParams.heightScale, 0.05, (val) => {
+  sphereParams.heightScale = val
+  rebuildGeometry()
 })
 
 // --- Rotación con mouse ---
@@ -155,71 +291,6 @@ function changeShape() {
   currentShape = currentShape === "sphere" ? "cube" : "sphere"
   rebuildGeometry()
 }
-
-// --- Reconstruir geometría según tipo ---
-function rebuildGeometry() {
-  sphere.geometry.dispose()
-  if (currentShape === "sphere") {
-    if (inside) {
-      geometry = new THREE.SphereGeometry(
-        sphereParams.radius * 1.3,
-        60,
-        40,
-        0,
-        Math.PI * 2,
-        Math.PI / 4,
-        Math.PI / 2
-      )
-      scene.background = new THREE.Color(0xffffff)
-      sphere.material.side = inside ? THREE.FrontSide : THREE.BackSide
-    } else {
-      geometry = new THREE.SphereGeometry(sphereParams.radius, 60, 40)
-      scene.background = null
-    }
-    geometry.scale(-sphereParams.widthScale, sphereParams.heightScale, 1)
-  } else if (currentShape === "cube") {
-    const size = sphereParams.radius
-    geometry = new THREE.BoxGeometry(size, size, size)
-    geometry.scale(sphereParams.widthScale, sphereParams.heightScale, 1)
-    scene.background = null
-
-    if (inside) {
-      const uvAttr = geometry.attributes.uv
-      for (let i = 0; i < uvAttr.count; i++) {
-        uvAttr.setX(i, 1 - uvAttr.getX(i))
-      }
-      uvAttr.needsUpdate = true
-    }
-
-    sphere.material.side = inside ? THREE.BackSide : THREE.FrontSide
-  }
-  sphere.geometry = geometry
-  if (spheres.length > 0) {
-    const tex = textureLoader.load(spheres[currentSphere])
-    sphere.material.map = tex
-  }
-  sphere.material.needsUpdate = true
-}
-
-// --- Sliders ---
-createSlider("Radio", 500, 2000, sphereParams.radius, 50, (val) => {
-  sphereParams.radius = val
-  rebuildGeometry()
-  if (inside) {
-    const ratio = val / 1000
-    camera.fov = 95 * ratio
-    camera.fov = Math.max(60, Math.min(130, camera.fov))
-    camera.updateProjectionMatrix()
-  }
-})
-createSlider("Ancho (X)", 0.5, 2, sphereParams.widthScale, 0.05, (val) => {
-  sphereParams.widthScale = val
-  rebuildGeometry()
-})
-createSlider("Alto (Y)", 0.5, 2, sphereParams.heightScale, 0.05, (val) => {
-  sphereParams.heightScale = val
-  rebuildGeometry()
-})
 
 // --- Teclado ---
 document.addEventListener("keydown", (e) => {
