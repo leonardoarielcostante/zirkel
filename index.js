@@ -79,7 +79,6 @@ const sphere = new THREE.Mesh(geometry, material)
 scene.add(sphere)
 
 // --- Inputs de carga ---
-// Contenedor visual para inputs
 const inputContainer = document.createElement("div")
 inputContainer.style.position = "absolute"
 inputContainer.style.top = "20px"
@@ -95,19 +94,19 @@ document.body.appendChild(inputContainer)
 
 // Input esfera
 const sphereLabel = document.createElement("label")
-sphereLabel.innerText = "Imagen esfera"
+sphereLabel.innerText = "Imagen/Video esfera"
 sphereLabel.style.display = "block"
 sphereLabel.style.marginTop = "6px"
 const sphereInput = document.createElement("input")
 sphereInput.type = "file"
-sphereInput.accept = "image/*"
+sphereInput.accept = "image/*,video/*"
 sphereInput.style.display = "block"
 sphereInput.style.marginBottom = "6px"
 sphereLabel.appendChild(sphereInput)
 inputContainer.appendChild(sphereLabel)
 
 // Inputs cubo
-const cubeLabels = ["Adelante", "Atrás", "Izquierda", "Derecha"]
+const cubeLabels = ["Adelante", "Atras", "Izquierda", "Derecha"]
 const cubeInputs = {}
 cubeLabels.forEach((label) => {
   const lbl = document.createElement("label")
@@ -116,23 +115,49 @@ cubeLabels.forEach((label) => {
   lbl.style.marginTop = "6px"
   const input = document.createElement("input")
   input.type = "file"
-  input.accept = "image/*"
+  input.accept = "image/*,video/*"
   input.style.display = "block"
   lbl.appendChild(input)
   inputContainer.appendChild(lbl)
   cubeInputs[label.toLowerCase()] = input
 })
 
+// --- Función para crear textura desde imagen o video ---
+function createTextureFromFile(file, callback) {
+  const url = URL.createObjectURL(file)
+  const lowerName = file.name.toLowerCase()
+
+  if (
+    lowerName.endsWith(".mp4") ||
+    lowerName.endsWith(".webm") ||
+    lowerName.endsWith(".ogg")
+  ) {
+    const video = document.createElement("video")
+    video.src = url
+    video.loop = true
+    video.muted = true
+    video.autoplay = true
+    video.playsInline = true
+
+    video.addEventListener("canplay", () => {
+      video.play()
+      const texture = new THREE.VideoTexture(video)
+      texture.minFilter = THREE.LinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.format = THREE.RGBAFormat
+      callback(texture)
+    })
+  } else {
+    const texture = textureLoader.load(url, (tex) => callback(tex))
+  }
+}
+
 // --- Eventos de carga ---
 sphereInput.addEventListener("change", (e) => {
   const file = e.target.files[0]
   if (file) {
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      sphereImage = ev.target.result
-      rebuildGeometry()
-    }
-    reader.readAsDataURL(file)
+    sphereImage = file
+    rebuildGeometry()
   }
 })
 
@@ -140,12 +165,8 @@ Object.entries(cubeInputs).forEach(([side, input]) => {
   input.addEventListener("change", (e) => {
     const file = e.target.files[0]
     if (file) {
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        cubeImages[side] = ev.target.result
-        rebuildGeometry()
-      }
-      reader.readAsDataURL(file)
+      cubeImages[side] = file
+      rebuildGeometry()
     }
   })
 })
@@ -159,13 +180,15 @@ function rebuildGeometry() {
     inside ? geometry.scale(-1, 1, 1) : geometry.scale(1, 1, 1)
     sphere.geometry = geometry
 
-    // Crear un nuevo material para la esfera
     const mat = new THREE.MeshBasicMaterial({
       side: inside ? THREE.FrontSide : THREE.BackSide,
     })
 
     if (sphereImage) {
-      mat.map = textureLoader.load(sphereImage)
+      createTextureFromFile(sphereImage, (tex) => {
+        mat.map = tex
+        mat.needsUpdate = true
+      })
     } else {
       mat.color.set(0xffffff)
     }
@@ -188,18 +211,23 @@ function rebuildGeometry() {
           side: inside ? THREE.BackSide : THREE.FrontSide,
         })
       } else {
-        let texSrc = null
-        if (i === 4) texSrc = cubeImages.adelante
-        if (i === 5) texSrc = cubeImages.atras
-        if (i === 1) texSrc = cubeImages.izquierda
-        if (i === 0) texSrc = cubeImages.derecha
+        let fileSrc = null
+        if (i === 4) fileSrc = cubeImages.adelante
+        if (i === 5) fileSrc = cubeImages.atras
+        if (i === 1) fileSrc = cubeImages.izquierda
+        if (i === 0) fileSrc = cubeImages.derecha
 
-        const texture = texSrc ? textureLoader.load(texSrc) : null
         mat = new THREE.MeshBasicMaterial({
-          map: texture,
-          color: texture ? 0xffffff : 0x999999,
+          color: 0xffffff,
           side: inside ? THREE.BackSide : THREE.FrontSide,
         })
+
+        if (fileSrc) {
+          createTextureFromFile(fileSrc, (tex) => {
+            mat.map = tex
+            mat.needsUpdate = true
+          })
+        }
       }
       cubeMaterials.push(mat)
     }
