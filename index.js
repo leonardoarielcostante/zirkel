@@ -9,10 +9,22 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
+const overlayText = document.createElement("div")
+overlayText.innerText = "Hola Mundo"
+overlayText.style.position = "absolute"
+overlayText.style.top = "20px"
+overlayText.style.left = "50%"
+overlayText.style.transform = "translateX(-50%)"
+overlayText.style.fontSize = "32px"
+overlayText.style.fontWeight = "bold"
+overlayText.style.color = "#000"
+overlayText.style.zIndex = "20"
+document.body.appendChild(overlayText)
+
 // --- Panel de sliders ---
 const controlPanel = document.createElement("div")
 controlPanel.style.position = "absolute"
-controlPanel.style.top = "300px"
+controlPanel.style.top = "350px"
 controlPanel.style.left = "20px"
 controlPanel.style.zIndex = "10"
 controlPanel.style.background = "rgba(255,255,255,0.9)"
@@ -58,10 +70,18 @@ let sphereParams = {
 }
 
 let sphereImage = null
-let cubeImages = { adelante: null, atras: null, izquierda: null, derecha: null }
+let cubeImages = {
+  adelante: null,
+  atras: null,
+  izquierda: null,
+  derecha: null,
+  arriba: null,
+  abajo: null,
+}
 
 let inside = false
 let currentShape = "sphere" // "sphere" o "cube"
+const activeVideos = [] // 🔹 lista de videos activos
 
 const textureLoader = new THREE.TextureLoader()
 
@@ -106,7 +126,14 @@ sphereLabel.appendChild(sphereInput)
 inputContainer.appendChild(sphereLabel)
 
 // Inputs cubo
-const cubeLabels = ["Adelante", "Atras", "Izquierda", "Derecha"]
+const cubeLabels = [
+  "Adelante",
+  "Atras",
+  "Izquierda",
+  "Derecha",
+  "Arriba",
+  "Abajo",
+]
 const cubeInputs = {}
 cubeLabels.forEach((label) => {
   const lbl = document.createElement("label")
@@ -145,6 +172,7 @@ function createTextureFromFile(file, callback) {
       texture.minFilter = THREE.LinearFilter
       texture.magFilter = THREE.LinearFilter
       texture.format = THREE.RGBAFormat
+      activeVideos.push(video) // 🔹 Guardamos referencia
       callback(texture)
     })
   } else {
@@ -205,29 +233,24 @@ function rebuildGeometry() {
     const cubeMaterials = []
     for (let i = 0; i < 6; i++) {
       let mat
-      if (i === 2 || i === 3) {
-        mat = new THREE.MeshBasicMaterial({
-          color: 0xcccccc,
-          side: inside ? THREE.BackSide : THREE.FrontSide,
-        })
-      } else {
-        let fileSrc = null
-        if (i === 4) fileSrc = cubeImages.adelante
-        if (i === 5) fileSrc = cubeImages.atras
-        if (i === 1) fileSrc = cubeImages.izquierda
-        if (i === 0) fileSrc = cubeImages.derecha
+      let fileSrc = null
+      if (i === 2) fileSrc = cubeImages.arriba
+      if (i === 3) fileSrc = cubeImages.abajo
+      if (i === 4) fileSrc = cubeImages.adelante
+      if (i === 5) fileSrc = cubeImages.atras
+      if (i === 0) fileSrc = cubeImages.izquierda
+      if (i === 1) fileSrc = cubeImages.derecha
 
-        mat = new THREE.MeshBasicMaterial({
-          color: 0xffffff,
-          side: inside ? THREE.BackSide : THREE.FrontSide,
-        })
+      mat = new THREE.MeshBasicMaterial({
+        color: 0xffffff, // 🔹 fondo blanco
+        side: inside ? THREE.BackSide : THREE.FrontSide,
+      })
 
-        if (fileSrc) {
-          createTextureFromFile(fileSrc, (tex) => {
-            mat.map = tex
-            mat.needsUpdate = true
-          })
-        }
+      if (fileSrc) {
+        createTextureFromFile(fileSrc, (tex) => {
+          mat.map = tex
+          mat.needsUpdate = true
+        })
       }
       cubeMaterials.push(mat)
     }
@@ -321,6 +344,7 @@ function changeShape() {
 }
 
 // --- Teclado ---
+let videosPaused = false
 document.addEventListener("keydown", (e) => {
   switch (e.key) {
     case "ArrowUp":
@@ -332,6 +356,23 @@ document.addEventListener("keydown", (e) => {
     case "ArrowLeft":
     case "ArrowRight":
       changeShape()
+      break
+    case "o":
+    case "O":
+      videosPaused = !videosPaused
+      activeVideos.forEach((v) => (videosPaused ? v.pause() : v.play()))
+      break
+    case "r":
+    case "R":
+      e.preventDefault()
+      camera.fov = Math.min(camera.fov - 5, 150) // máximo 150
+      camera.updateProjectionMatrix()
+      break
+    case "e":
+    case "E":
+      e.preventDefault()
+      camera.fov = Math.min(camera.fov + 5, 150) // máximo 150
+      camera.updateProjectionMatrix()
       break
   }
 })
