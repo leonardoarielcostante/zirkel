@@ -9,18 +9,6 @@ const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)
 document.body.appendChild(renderer.domElement)
 
-const overlayText = document.createElement("div")
-overlayText.innerText = "Hola Mundo"
-overlayText.style.position = "absolute"
-overlayText.style.top = "20px"
-overlayText.style.left = "50%"
-overlayText.style.transform = "translateX(-50%)"
-overlayText.style.fontSize = "32px"
-overlayText.style.fontWeight = "bold"
-overlayText.style.color = "#000"
-overlayText.style.zIndex = "20"
-document.body.appendChild(overlayText)
-
 // --- Parámetros ---
 let sphereParams = {
   radius: 1000,
@@ -31,6 +19,7 @@ let sphereParams = {
 
 let inside = false
 const activeVideos = []
+const activeCanvasUpdaters = [] // <-- agregado para actualizar canvas de video/texto cada frame
 const textureLoader = new THREE.TextureLoader()
 
 // --- Soporte para múltiples escenas ---
@@ -55,6 +44,23 @@ function makeEmptyImages() {
     derecha: null,
     arriba: null,
     abajo: null,
+    texts: {
+      adelante: "",
+      atras: "",
+      izquierda: "",
+      derecha: "",
+      arriba: "",
+      abajo: "",
+    },
+    textPositions: {
+      // <-- agregado: posición del texto por cara ("arriba" | "abajo")
+      adelante: "abajo",
+      atras: "abajo",
+      izquierda: "abajo",
+      derecha: "abajo",
+      arriba: "abajo",
+      abajo: "abajo",
+    },
   }
 }
 
@@ -148,16 +154,7 @@ sceneSelect.addEventListener("change", () => {
 
 // --- Inputs de carga (container) ---
 const inputContainer = document.createElement("div")
-inputContainer.style.position = "absolute"
-inputContainer.style.top = "80px"
-inputContainer.style.left = "20px"
-inputContainer.style.zIndex = "10"
-inputContainer.style.background = "rgba(255,255,255,0.95)"
-inputContainer.style.padding = "10px"
-inputContainer.style.borderRadius = "8px"
-inputContainer.style.width = "200px"
-inputContainer.style.fontFamily = "sans-serif"
-inputContainer.style.fontSize = "14px"
+inputContainer.id = "inputContainer"
 document.body.appendChild(inputContainer)
 
 // Botón para ocultar/mostrar la barra de inputs
@@ -238,10 +235,50 @@ function rebuildInputsForCurrentScene() {
       }
     })
 
+    // --- Nuevo: input de texto para la cara ---
+    const textLabel = document.createElement("div")
+    textLabel.className = "text-label"
+    textLabel.innerText = "Texto (opcional)"
+    textLabel.style.marginTop = "6px"
+
+    const textInput = document.createElement("input")
+    textInput.type = "text"
+    textInput.value = sceneObj.images.texts[key] || ""
+    textInput.addEventListener("input", (e) => {
+      sceneObj.images.texts[key] = e.target.value
+      rebuildGeometry()
+    })
+
+    // --- Nuevo: selector para posición del texto (arriba/abajo) ---
+    const posLabel = document.createElement("div")
+    posLabel.innerText = "Posición texto"
+    posLabel.style.marginTop = "6px"
+
+    const posSelect = document.createElement("select")
+    const optTop = document.createElement("option")
+    optTop.value = "arriba"
+    optTop.innerText = "Arriba"
+    const optBottom = document.createElement("option")
+    optBottom.value = "abajo"
+    optBottom.innerText = "Abajo"
+    posSelect.appendChild(optTop)
+    posSelect.appendChild(optBottom)
+    posSelect.value = sceneObj.images.textPositions[key] || "abajo"
+    posSelect.style.width = "100%"
+    posSelect.addEventListener("change", (e) => {
+      sceneObj.images.textPositions[key] = e.target.value
+      rebuildGeometry()
+    })
+
+    // Append
     inputGroup.appendChild(directionLabel)
     inputGroup.appendChild(input)
     inputGroup.appendChild(labelEl)
     inputGroup.appendChild(info)
+    inputGroup.appendChild(textLabel)
+    inputGroup.appendChild(textInput)
+    inputGroup.appendChild(posLabel) // <-- agregado
+    inputGroup.appendChild(posSelect) // <-- agregado
     inputContainer.appendChild(inputGroup)
     currentInputs[key] = input
   })
@@ -281,9 +318,122 @@ function createTextureFromFile(file, callback) {
   }
 }
 
+// --- Nueva función: crear textura desde archivo dibujando en canvas y superponiendo texto ---
+function createCanvasTextureFromFile(file, text, position, callback) {
+  const url = URL.createObjectURL(file)
+  const lowerName = file.name.toLowerCase()
+  const canvas = document.createElement("canvas")
+  const size = 2048
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext("2d")
+
+  function drawTextOnCtx() {
+    if (!text) return
+    const margin = 40
+    const maxWidth = canvas.width - margin * 2
+    const fontSize = Math.max(28, Math.floor(size / 30))
+    ctx.font = `${fontSize}px sans-serif`
+    ctx.textAlign = "center"
+    // Baseline y posición según 'position'
+    const isTop = position === "arriba"
+    ctx.textBaseline = isTop ? "top" : "bottom"
+    ctx.fillStyle = "black"
+
+    // dividir en palabras y construir líneas que no excedan maxWidth
+    const words = String(text).split(/\s+/)
+    const lines = []
+    let line = ""
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line ? line + " " + words[n] : words[n]
+      const metrics = ctx.measureText(testLine)
+      if (metrics.width > maxWidth && line) {
+        lines.push(line)
+        line = words[n]
+      } else {
+        line = testLine
+      }
+    }
+    if (line) lines.push(line)
+
+    const lineHeight = Math.ceil(fontSize * 1.2)
+    const x = canvas.width / 2
+    // y dependiendo si arriba (margen desde arriba) o abajo (margen desde abajo)
+    if (isTop) {
+      let y = margin
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], x, y + i * lineHeight)
+      }
+    } else {
+      // si es abajo, comenzamos desde abajo hacia arriba
+      let yBase = canvas.height - margin
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], x, yBase - (lines.length - 1 - i) * lineHeight)
+      }
+    }
+  }
+
+  if (
+    lowerName.endsWith(".mp4") ||
+    lowerName.endsWith(".webm") ||
+    lowerName.endsWith(".ogg")
+  ) {
+    const video = document.createElement("video")
+    video.src = url
+    video.loop = true
+    video.muted = true
+    video.autoplay = true
+    video.playsInline = true
+
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.minFilter = THREE.LinearFilter
+    texture.magFilter = THREE.LinearFilter
+    texture.format = THREE.RGBAFormat
+
+    function updateCanvasFromVideo() {
+      if (video.readyState >= 2) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        drawTextOnCtx()
+        texture.needsUpdate = true
+      }
+    }
+
+    video.addEventListener("canplay", () => {
+      video.play()
+      updateCanvasFromVideo()
+      activeVideos.push(video)
+      callback(texture, updateCanvasFromVideo)
+    })
+  } else {
+    const img = new Image()
+    img.onload = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      drawTextOnCtx()
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.minFilter = THREE.LinearFilter
+      texture.magFilter = THREE.LinearFilter
+      texture.format = THREE.RGBAFormat
+      callback(texture)
+    }
+    img.src = url
+  }
+}
+
 // --- Reconstruir geometría usando las imágenes de la escena activa ---
 function rebuildGeometry() {
   if (cubeMesh.geometry) cubeMesh.geometry.dispose()
+
+  // limpiar updaters y videos previos (para evitar acumulación)
+  activeCanvasUpdaters.length = 0
+  activeVideos.forEach((v) => {
+    try {
+      v.pause()
+      URL.revokeObjectURL(v.src)
+    } catch (e) {}
+  })
+  activeVideos.length = 0
 
   const size = sphereParams.radius
   const scaledX = size * sphereParams.widthScale
@@ -310,10 +460,44 @@ function rebuildGeometry() {
     })
 
     if (fileSrc) {
-      createTextureFromFile(fileSrc, (tex) => {
-        mat.map = tex
-        mat.needsUpdate = true
-      })
+      // obtener el texto y la posición asociados a esta cara
+      let textForFace = ""
+      let posForFace = "abajo"
+      if (i === 2) {
+        textForFace = sceneImages.texts.arriba
+        posForFace = sceneImages.textPositions.arriba
+      }
+      if (i === 3) {
+        textForFace = sceneImages.texts.abajo
+        posForFace = sceneImages.textPositions.abajo
+      }
+      if (i === 4) {
+        textForFace = sceneImages.texts.adelante
+        posForFace = sceneImages.textPositions.adelante
+      }
+      if (i === 5) {
+        textForFace = sceneImages.texts.atras
+        posForFace = sceneImages.textPositions.atras
+      }
+      if (i === 0) {
+        textForFace = sceneImages.texts.izquierda
+        posForFace = sceneImages.textPositions.izquierda
+      }
+      if (i === 1) {
+        textForFace = sceneImages.texts.derecha
+        posForFace = sceneImages.textPositions.derecha
+      }
+
+      createCanvasTextureFromFile(
+        fileSrc,
+        textForFace,
+        posForFace,
+        (tex, updater) => {
+          mat.map = tex
+          mat.needsUpdate = true
+          if (updater) activeCanvasUpdaters.push(updater)
+        }
+      )
     }
     cubeMaterials.push(mat)
   }
@@ -420,6 +604,14 @@ document.addEventListener("keydown", (e) => {
 // --- Animación principal ---
 function animate() {
   requestAnimationFrame(animate)
+  // actualizar canvas de video/texto cada frame
+  if (activeCanvasUpdaters.length) {
+    for (let u of activeCanvasUpdaters) {
+      try {
+        u()
+      } catch (e) {}
+    }
+  }
   cubeMesh.rotation.set(0, rotationY, 0)
   renderer.render(scene, camera)
 }
