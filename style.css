@@ -1,4 +1,4 @@
-    body { margin: 0; overflow: hidden; background-color: black; }
+body { margin: 0; overflow: hidden; background-color: black; }
     #info {
       position: absolute;
       top: 10px; left: 10px;
@@ -8,3 +8,105 @@
       padding: 10px 15px;
       border-radius: 10px;
     }
+
+/* Estilos para los contenedores */
+.input-container, .scenes-bar {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  font-family: 'Segoe UI', sans-serif;
+}
+
+/* Estilos para los inputs de archivo */
+input[type="file"] {
+  width: 0.1px;
+  height: 0.1px;
+  opacity: 0;
+  position: absolute;
+  z-index: -1;
+}
+
+input[type="file"] + label {
+  background-color: #4a90e2;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  display: block;
+  width: calc(100% - 24px);
+  cursor: pointer;
+  margin: 5px 0;
+  font-size: 14px;
+  transition: background-color 0.3s;
+  text-align: center;
+}
+
+input[type="file"] + label:hover {
+  background-color: #357abd;
+}
+
+/* Estilos para el selector de escenas */
+select {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background-color: white;
+  font-size: 14px;
+  margin-right: 8px;
+}
+
+/* Estilos para los botones */
+button {
+  background-color: #4a90e2;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+button:hover {
+  background-color: #357abd;
+}
+
+/* Botón de eliminar */
+button.delete-btn {
+  background-color: #e74c3c;
+}
+
+button.delete-btn:hover {
+  background-color: #c0392b;
+}
+
+/* Información de archivo */
+.file-info {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+/* Título de la escena */
+.scene-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+/* Contenedor para cada input y su etiqueta */
+.input-group {
+  margin-bottom: 15px;
+  width: 100%;
+}
+
+/* Etiquetas de dirección (Adelante, Atrás, etc.) */
+.direction-label {
+  display: block;
+  color: #333;
+  font-weight: 500;
+  margin-bottom: 8px;
+  font-size: 14px;
+}

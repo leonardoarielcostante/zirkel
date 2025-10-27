@@ -21,111 +21,19 @@ overlayText.style.color = "#000"
 overlayText.style.zIndex = "20"
 document.body.appendChild(overlayText)
 
-// --- Panel de sliders ---
-const controlPanel = document.createElement("div")
-controlPanel.style.position = "absolute"
-controlPanel.style.top = "350px"
-controlPanel.style.left = "20px"
-controlPanel.style.zIndex = "10"
-controlPanel.style.background = "rgba(255,255,255,0.9)"
-controlPanel.style.padding = "10px"
-controlPanel.style.borderRadius = "8px"
-controlPanel.style.width = "220px"
-controlPanel.style.fontFamily = "sans-serif"
-controlPanel.style.fontSize = "14px"
-document.body.appendChild(controlPanel)
-
-// --- Helper para sliders ---
-function createSlider(labelText, min, max, value, step, callback) {
-  const container = document.createElement("div")
-  container.style.marginBottom = "8px"
-  const label = document.createElement("label")
-  label.innerText = `${labelText}: ${value}`
-  label.style.display = "block"
-  label.style.marginBottom = "4px"
-  const slider = document.createElement("input")
-  slider.type = "range"
-  slider.min = min
-  slider.max = max
-  slider.value = value
-  slider.step = step
-  slider.style.width = "100%"
-  slider.addEventListener("input", (e) => {
-    const val = parseFloat(e.target.value)
-    label.innerText = `${labelText}: ${val}`
-    callback(val)
-  })
-  container.appendChild(label)
-  container.appendChild(slider)
-  controlPanel.appendChild(container)
-  return slider
-}
-
 // --- Parámetros ---
 let sphereParams = {
   radius: 1000,
-  widthScale: 1,
-  depthScale: 1,
+  widthScale: 2,
+  depthScale: 2,
   heightScale: 1,
 }
 
-let sphereImage = null
-let cubeImages = {
-  adelante: null,
-  atras: null,
-  izquierda: null,
-  derecha: null,
-  arriba: null,
-  abajo: null,
-}
-
 let inside = false
-let currentShape = "sphere" // "sphere" o "cube"
-const activeVideos = [] // 🔹 lista de videos activos
-
+const activeVideos = []
 const textureLoader = new THREE.TextureLoader()
 
-// --- Posiciones de cámara ---
-const insidePos = new THREE.Vector3(0, 0, 0)
-const outsidePos = new THREE.Vector3(0, 0, 1800)
-camera.position.copy(outsidePos)
-camera.lookAt(0, 0, 0)
-
-// --- Crear objeto base ---
-let geometry = new THREE.SphereGeometry(sphereParams.radius, 60, 40)
-geometry.scale(-1, 1, 1)
-const material = new THREE.MeshBasicMaterial({ color: 0xffffff })
-const sphere = new THREE.Mesh(geometry, material)
-scene.add(sphere)
-
-// --- Inputs de carga ---
-const inputContainer = document.createElement("div")
-inputContainer.style.position = "absolute"
-inputContainer.style.top = "20px"
-inputContainer.style.left = "20px"
-inputContainer.style.zIndex = "10"
-inputContainer.style.background = "rgba(255,255,255,0.9)"
-inputContainer.style.padding = "10px"
-inputContainer.style.borderRadius = "8px"
-inputContainer.style.width = "200px"
-inputContainer.style.fontFamily = "sans-serif"
-inputContainer.style.fontSize = "14px"
-document.body.appendChild(inputContainer)
-
-// Input esfera
-const sphereLabel = document.createElement("label")
-sphereLabel.innerText = "Imagen/Video esfera"
-sphereLabel.style.display = "block"
-sphereLabel.style.marginTop = "6px"
-const sphereInput = document.createElement("input")
-sphereInput.type = "file"
-sphereInput.accept = "image/*,video/*"
-sphereInput.style.display = "block"
-sphereInput.style.marginBottom = "6px"
-sphereLabel.appendChild(sphereInput)
-inputContainer.appendChild(sphereLabel)
-
-// Inputs cubo
+// --- Soporte para múltiples escenas ---
 const cubeLabels = [
   "Adelante",
   "Atras",
@@ -134,20 +42,213 @@ const cubeLabels = [
   "Arriba",
   "Abajo",
 ]
-const cubeInputs = {}
-cubeLabels.forEach((label) => {
-  const lbl = document.createElement("label")
-  lbl.innerText = label
-  lbl.style.display = "block"
-  lbl.style.marginTop = "6px"
-  const input = document.createElement("input")
-  input.type = "file"
-  input.accept = "image/*,video/*"
-  input.style.display = "block"
-  lbl.appendChild(input)
-  inputContainer.appendChild(lbl)
-  cubeInputs[label.toLowerCase()] = input
+
+// scenesData: array de escenas; cada escena tiene un nombre y un objeto images con 6 entradas
+const scenesData = []
+let currentSceneIndex = 0
+
+function makeEmptyImages() {
+  return {
+    adelante: null,
+    atras: null,
+    izquierda: null,
+    derecha: null,
+    arriba: null,
+    abajo: null,
+  }
+}
+
+function createNewScene(name) {
+  return {
+    name: name || `Escena ${scenesData.length + 1}`,
+    images: makeEmptyImages(),
+  }
+}
+
+// Inicializar con una escena por defecto
+scenesData.push(createNewScene("Escena 1"))
+
+// --- Posiciones de cámara ---
+const insidePos = new THREE.Vector3(0, 0, 0)
+const outsidePos = new THREE.Vector3(0, 0, 1800)
+camera.position.copy(outsidePos)
+camera.lookAt(0, 0, 0)
+
+// --- Crear objeto base (solo cubo) ---
+let geometry = new THREE.BoxGeometry(
+  sphereParams.radius * sphereParams.widthScale,
+  sphereParams.radius * sphereParams.heightScale,
+  sphereParams.radius * sphereParams.depthScale
+)
+const defaultMat = new THREE.MeshBasicMaterial({ color: 0xffffff })
+let cubeMesh = new THREE.Mesh(geometry, defaultMat)
+scene.add(cubeMesh)
+scene.background = null
+
+// --- Barra de escenas (selector + botones) ---
+const scenesBar = document.createElement("div")
+scenesBar.style.position = "absolute"
+scenesBar.style.top = "15px"
+scenesBar.style.left = "15px"
+scenesBar.style.zIndex = "12"
+scenesBar.style.background = "rgba(255,255,255,0.9)"
+scenesBar.style.padding = "8px"
+scenesBar.style.borderRadius = "8px"
+scenesBar.style.fontFamily = "sans-serif"
+scenesBar.style.fontSize = "14px"
+document.body.appendChild(scenesBar)
+
+const sceneSelect = document.createElement("select")
+sceneSelect.style.marginRight = "6px"
+scenesBar.appendChild(sceneSelect)
+
+const addSceneBtn = document.createElement("button")
+addSceneBtn.innerText = "Nueva escena"
+addSceneBtn.style.marginRight = "6px"
+scenesBar.appendChild(addSceneBtn)
+
+const deleteSceneBtn = document.createElement("button")
+deleteSceneBtn.innerText = "Eliminar"
+scenesBar.appendChild(deleteSceneBtn)
+
+function updateSceneSelect() {
+  sceneSelect.innerHTML = ""
+  scenesData.forEach((s, idx) => {
+    const opt = document.createElement("option")
+    opt.value = String(idx)
+    opt.innerText = s.name
+    sceneSelect.appendChild(opt)
+  })
+  sceneSelect.value = String(currentSceneIndex)
+}
+updateSceneSelect()
+
+addSceneBtn.addEventListener("click", () => {
+  scenesData.push(createNewScene())
+  currentSceneIndex = scenesData.length - 1
+  updateSceneSelect()
+  rebuildInputsForCurrentScene()
+  rebuildGeometry()
 })
+
+deleteSceneBtn.addEventListener("click", () => {
+  if (scenesData.length <= 1) return // mantener al menos una escena
+  scenesData.splice(currentSceneIndex, 1)
+  currentSceneIndex = Math.max(0, currentSceneIndex - 1)
+  updateSceneSelect()
+  rebuildInputsForCurrentScene()
+  rebuildGeometry()
+})
+
+sceneSelect.addEventListener("change", () => {
+  currentSceneIndex = parseInt(sceneSelect.value, 10)
+  rebuildInputsForCurrentScene()
+  rebuildGeometry()
+})
+
+// --- Inputs de carga (container) ---
+const inputContainer = document.createElement("div")
+inputContainer.style.position = "absolute"
+inputContainer.style.top = "80px"
+inputContainer.style.left = "20px"
+inputContainer.style.zIndex = "10"
+inputContainer.style.background = "rgba(255,255,255,0.95)"
+inputContainer.style.padding = "10px"
+inputContainer.style.borderRadius = "8px"
+inputContainer.style.width = "200px"
+inputContainer.style.fontFamily = "sans-serif"
+inputContainer.style.fontSize = "14px"
+document.body.appendChild(inputContainer)
+
+// Botón para ocultar/mostrar la barra de inputs
+const toggleInputBtn = document.createElement("button")
+toggleInputBtn.innerText = "Ocultar inputs"
+toggleInputBtn.style.position = "absolute"
+toggleInputBtn.style.bottom = "20px"
+toggleInputBtn.style.left = "20px"
+toggleInputBtn.style.zIndex = "11"
+toggleInputBtn.style.padding = "6px 8px"
+toggleInputBtn.style.borderRadius = "6px"
+toggleInputBtn.style.cursor = "pointer"
+document.body.appendChild(toggleInputBtn)
+
+let inputsVisible = true
+function setInputVisibility(visible) {
+  inputContainer.style.display = visible ? "block" : "none"
+  scenesBar.style.display = visible ? "block" : "none"
+  toggleInputBtn.innerText = visible ? "Ocultar inputs" : "Mostrar inputs"
+  inputsVisible = visible
+}
+
+toggleInputBtn.addEventListener("click", () =>
+  setInputVisibility(!inputsVisible)
+)
+
+// --- Crear inputs dinámicamente según la escena actual ---
+let currentInputs = {} // mapping lado -> input element
+
+function clearInputContainer() {
+  inputContainer.innerHTML = ""
+  currentInputs = {}
+}
+
+function rebuildInputsForCurrentScene() {
+  clearInputContainer()
+  const sceneObj = scenesData[currentSceneIndex]
+  const title = document.createElement("div")
+  title.className = "scene-title"
+  title.innerText = sceneObj.name
+  inputContainer.appendChild(title)
+
+  cubeLabels.forEach((label) => {
+    const key = label.toLowerCase()
+
+    // Crear grupo contenedor
+    const inputGroup = document.createElement("div")
+    inputGroup.className = "input-group"
+
+    // Etiqueta de dirección
+    const directionLabel = document.createElement("span")
+    directionLabel.className = "direction-label"
+    directionLabel.innerText = label
+
+    const input = document.createElement("input")
+    input.type = "file"
+    input.accept = "image/*,video/*"
+    input.id = `input-${key}`
+
+    const labelEl = document.createElement("label")
+    labelEl.setAttribute("for", `input-${key}`)
+    labelEl.innerText = "Seleccionar archivo"
+
+    const info = document.createElement("div")
+    info.className = "file-info"
+
+    const existingFile = sceneObj.images[key]
+    info.innerText = existingFile
+      ? existingFile.name
+      : "No hay archivo seleccionado"
+
+    input.addEventListener("change", (e) => {
+      const file = e.target.files[0]
+      if (file) {
+        sceneObj.images[key] = file
+        info.innerText = file.name || ""
+        rebuildGeometry()
+      }
+    })
+
+    inputGroup.appendChild(directionLabel)
+    inputGroup.appendChild(input)
+    inputGroup.appendChild(labelEl)
+    inputGroup.appendChild(info)
+    inputContainer.appendChild(inputGroup)
+    currentInputs[key] = input
+  })
+}
+
+// Inicializar UI de inputs con la escena por defecto
+rebuildInputsForCurrentScene()
 
 // --- Función para crear textura desde imagen o video ---
 function createTextureFromFile(file, callback) {
@@ -172,125 +273,68 @@ function createTextureFromFile(file, callback) {
       texture.minFilter = THREE.LinearFilter
       texture.magFilter = THREE.LinearFilter
       texture.format = THREE.RGBAFormat
-      activeVideos.push(video) // 🔹 Guardamos referencia
+      activeVideos.push(video)
       callback(texture)
     })
   } else {
-    const texture = textureLoader.load(url, (tex) => callback(tex))
+    textureLoader.load(url, (tex) => callback(tex))
   }
 }
 
-// --- Eventos de carga ---
-sphereInput.addEventListener("change", (e) => {
-  const file = e.target.files[0]
-  if (file) {
-    sphereImage = file
-    rebuildGeometry()
-  }
-})
-
-Object.entries(cubeInputs).forEach(([side, input]) => {
-  input.addEventListener("change", (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      cubeImages[side] = file
-      rebuildGeometry()
-    }
-  })
-})
-
-// --- Reconstruir geometría ---
+// --- Reconstruir geometría usando las imágenes de la escena activa ---
 function rebuildGeometry() {
-  sphere.geometry.dispose()
+  if (cubeMesh.geometry) cubeMesh.geometry.dispose()
 
-  if (currentShape === "sphere") {
-    geometry = new THREE.SphereGeometry(sphereParams.radius, 60, 40)
-    inside ? geometry.scale(-1, 1, 1) : geometry.scale(1, 1, 1)
-    sphere.geometry = geometry
+  const size = sphereParams.radius
+  const scaledX = size * sphereParams.widthScale
+  const scaledY = size * sphereParams.heightScale
+  const scaledZ = size * sphereParams.depthScale
+  geometry = new THREE.BoxGeometry(scaledX, scaledY, scaledZ)
 
-    const mat = new THREE.MeshBasicMaterial({
-      side: inside ? THREE.FrontSide : THREE.BackSide,
+  const sceneImages = scenesData[currentSceneIndex].images
+
+  const cubeMaterials = []
+  for (let i = 0; i < 6; i++) {
+    let mat
+    let fileSrc = null
+    if (i === 2) fileSrc = sceneImages.arriba
+    if (i === 3) fileSrc = sceneImages.abajo
+    if (i === 4) fileSrc = sceneImages.adelante
+    if (i === 5) fileSrc = sceneImages.atras
+    if (i === 0) fileSrc = sceneImages.izquierda
+    if (i === 1) fileSrc = sceneImages.derecha
+
+    mat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: inside ? THREE.BackSide : THREE.FrontSide,
     })
 
-    if (sphereImage) {
-      createTextureFromFile(sphereImage, (tex) => {
+    if (fileSrc) {
+      createTextureFromFile(fileSrc, (tex) => {
         mat.map = tex
         mat.needsUpdate = true
       })
-    } else {
-      mat.color.set(0xffffff)
     }
-
-    sphere.material = mat
-    sphere.material.side = inside ? THREE.FrontSide : THREE.BackSide
-  } else if (currentShape === "cube") {
-    const size = sphereParams.radius
-    const scaledX = size * sphereParams.widthScale
-    const scaledY = size * sphereParams.heightScale
-    const scaledZ = size * sphereParams.depthScale
-    geometry = new THREE.BoxGeometry(scaledX, scaledY, scaledZ)
-
-    const cubeMaterials = []
-    for (let i = 0; i < 6; i++) {
-      let mat
-      let fileSrc = null
-      if (i === 2) fileSrc = cubeImages.arriba
-      if (i === 3) fileSrc = cubeImages.abajo
-      if (i === 4) fileSrc = cubeImages.adelante
-      if (i === 5) fileSrc = cubeImages.atras
-      if (i === 0) fileSrc = cubeImages.izquierda
-      if (i === 1) fileSrc = cubeImages.derecha
-
-      mat = new THREE.MeshBasicMaterial({
-        color: 0xffffff, // 🔹 fondo blanco
-        side: inside ? THREE.BackSide : THREE.FrontSide,
-      })
-
-      if (fileSrc) {
-        createTextureFromFile(fileSrc, (tex) => {
-          mat.map = tex
-          mat.needsUpdate = true
-        })
-      }
-      cubeMaterials.push(mat)
-    }
-
-    sphere.material = cubeMaterials
-    sphere.geometry = geometry
-    scene.background = null
-
-    if (inside) {
-      const uvAttr = geometry.attributes.uv
-      for (let i = 0; i < uvAttr.count; i++) {
-        uvAttr.setX(i, 1 - uvAttr.getX(i))
-      }
-      uvAttr.needsUpdate = true
-    }
+    cubeMaterials.push(mat)
   }
 
-  sphere.material.needsUpdate = true
-}
+  cubeMesh.material = cubeMaterials
+  cubeMesh.geometry = geometry
 
-// --- Sliders ---
-createSlider("Radio", 500, 2000, sphereParams.radius, 50, (val) => {
-  sphereParams.radius = val
-  rebuildGeometry()
   if (inside) {
-    const ratio = val / 1000
-    camera.fov = 95 * ratio
-    camera.fov = Math.max(60, Math.min(130, camera.fov))
-    camera.updateProjectionMatrix()
+    const uvAttr = geometry.attributes.uv
+    for (let i = 0; i < uvAttr.count; i++) {
+      uvAttr.setX(i, 1 - uvAttr.getX(i))
+    }
+    uvAttr.needsUpdate = true
   }
-})
-createSlider("Ancho (X)", 0.5, 4, sphereParams.widthScale, 0.05, (val) => {
-  sphereParams.widthScale = val
-  sphereParams.depthScale = val
-  rebuildGeometry()
-})
-createSlider("Alto (Y)", 0.5, 4, sphereParams.heightScale, 0.05, (val) => {
-  sphereParams.heightScale = val
-  rebuildGeometry()
-})
+
+  if (Array.isArray(cubeMesh.material)) {
+    cubeMesh.material.forEach((m) => (m.needsUpdate = true))
+  } else {
+    cubeMesh.material.needsUpdate = true
+  }
+}
 
 // --- Rotación con mouse ---
 let rotationY = 0
@@ -337,12 +381,6 @@ function toggleView(goInside) {
   animateTransition()
 }
 
-// --- Cambiar geometría ---
-function changeShape() {
-  currentShape = currentShape === "sphere" ? "cube" : "sphere"
-  rebuildGeometry()
-}
-
 // --- Teclado ---
 let videosPaused = false
 document.addEventListener("keydown", (e) => {
@@ -354,25 +392,27 @@ document.addEventListener("keydown", (e) => {
       if (inside) toggleView(false)
       break
     case "ArrowLeft":
+      // Cambiar a escena anterior
+      if (currentSceneIndex > 0) {
+        currentSceneIndex--
+        sceneSelect.value = String(currentSceneIndex)
+        rebuildInputsForCurrentScene()
+        rebuildGeometry()
+      }
+      break
     case "ArrowRight":
-      changeShape()
+      // Cambiar a siguiente escena
+      if (currentSceneIndex < scenesData.length - 1) {
+        currentSceneIndex++
+        sceneSelect.value = String(currentSceneIndex)
+        rebuildInputsForCurrentScene()
+        rebuildGeometry()
+      }
       break
     case "o":
     case "O":
       videosPaused = !videosPaused
       activeVideos.forEach((v) => (videosPaused ? v.pause() : v.play()))
-      break
-    case "r":
-    case "R":
-      e.preventDefault()
-      camera.fov = Math.min(camera.fov - 5, 150) // máximo 150
-      camera.updateProjectionMatrix()
-      break
-    case "e":
-    case "E":
-      e.preventDefault()
-      camera.fov = Math.min(camera.fov + 5, 150) // máximo 150
-      camera.updateProjectionMatrix()
       break
   }
 })
@@ -380,8 +420,7 @@ document.addEventListener("keydown", (e) => {
 // --- Animación principal ---
 function animate() {
   requestAnimationFrame(animate)
-  if (!inside) rotationY += 0.003
-  sphere.rotation.set(0, rotationY, 0)
+  cubeMesh.rotation.set(0, rotationY, 0)
   renderer.render(scene, camera)
 }
 animate()
