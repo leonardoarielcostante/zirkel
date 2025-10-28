@@ -20,6 +20,7 @@ let sphereParams = {
 let inside = false
 const activeVideos = []
 const activeCanvasUpdaters = [] // <-- agregado para actualizar canvas de video/texto cada frame
+const activeTextures = [] // <-- nuevo: para llevar control y disponer texturas viejas
 const textureLoader = new THREE.TextureLoader()
 
 // --- Soporte para múltiples escenas ---
@@ -323,24 +324,22 @@ function createCanvasTextureFromFile(file, text, position, callback) {
   const url = URL.createObjectURL(file)
   const lowerName = file.name.toLowerCase()
   const canvas = document.createElement("canvas")
-  const size = 2048
+  const size = VIDEO_CANVAS_SIZE
   canvas.width = size
   canvas.height = size
   const ctx = canvas.getContext("2d")
 
   function drawTextOnCtx() {
     if (!text) return
-    const margin = 40
+    const margin = 24
     const maxWidth = canvas.width - margin * 2
-    const fontSize = Math.max(28, Math.floor(size / 30))
+    const fontSize = Math.max(18, Math.floor(size / 36))
     ctx.font = `${fontSize}px sans-serif`
     ctx.textAlign = "center"
-    // Baseline y posición según 'position'
     const isTop = position === "arriba"
     ctx.textBaseline = isTop ? "top" : "bottom"
     ctx.fillStyle = "black"
 
-    // dividir en palabras y construir líneas que no excedan maxWidth
     const words = String(text).split(/\s+/)
     const lines = []
     let line = ""
@@ -358,19 +357,45 @@ function createCanvasTextureFromFile(file, text, position, callback) {
 
     const lineHeight = Math.ceil(fontSize * 1.2)
     const x = canvas.width / 2
-    // y dependiendo si arriba (margen desde arriba) o abajo (margen desde abajo)
     if (isTop) {
       let y = margin
       for (let i = 0; i < lines.length; i++) {
         ctx.fillText(lines[i], x, y + i * lineHeight)
       }
     } else {
-      // si es abajo, comenzamos desde abajo hacia arriba
       let yBase = canvas.height - margin
       for (let i = 0; i < lines.length; i++) {
         ctx.fillText(lines[i], x, yBase - (lines.length - 1 - i) * lineHeight)
       }
     }
+  }
+
+  // Si es vídeo y NO hay texto, usar VideoTexture directo (más eficiente)
+  if (
+    (lowerName.endsWith(".mp4") ||
+      lowerName.endsWith(".webm") ||
+      lowerName.endsWith(".ogg")) &&
+    !text
+  ) {
+    const video = document.createElement("video")
+    video.src = url
+    video.loop = true
+    video.muted = true
+    video.autoplay = true
+    video.playsInline = true
+    const vtex = new THREE.VideoTexture(video)
+    vtex.minFilter = THREE.LinearFilter
+    vtex.magFilter = THREE.LinearFilter
+    vtex.format = THREE.RGBAFormat
+    vtex.generateMipmaps = false
+    // guardar referencias para limpiar después
+    activeTextures.push({ tex: vtex, url })
+    video.addEventListener("canplay", () => {
+      video.play()
+      activeVideos.push(video)
+      callback(vtex)
+    })
+    return
   }
 
   if (
@@ -389,8 +414,14 @@ function createCanvasTextureFromFile(file, text, position, callback) {
     texture.minFilter = THREE.LinearFilter
     texture.magFilter = THREE.LinearFilter
     texture.format = THREE.RGBAFormat
+    texture.generateMipmaps = false
+    activeTextures.push({ tex: texture, url })
 
+    let lastUpdate = 0
     function updateCanvasFromVideo() {
+      const now = performance.now()
+      if (now - lastUpdate < CANVAS_UPDATE_MIN_MS) return // throttle
+      lastUpdate = now
       if (video.readyState >= 2) {
         ctx.clearRect(0, 0, canvas.width, canvas.height)
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
@@ -401,6 +432,7 @@ function createCanvasTextureFromFile(file, text, position, callback) {
 
     video.addEventListener("canplay", () => {
       video.play()
+      // una primera actualización inmediata
       updateCanvasFromVideo()
       activeVideos.push(video)
       callback(texture, updateCanvasFromVideo)
@@ -415,6 +447,8 @@ function createCanvasTextureFromFile(file, text, position, callback) {
       texture.minFilter = THREE.LinearFilter
       texture.magFilter = THREE.LinearFilter
       texture.format = THREE.RGBAFormat
+      texture.generateMipmaps = false
+      activeTextures.push({ tex: texture, url })
       callback(texture)
     }
     img.src = url
@@ -430,10 +464,27 @@ function rebuildGeometry() {
   activeVideos.forEach((v) => {
     try {
       v.pause()
-      URL.revokeObjectURL(v.src)
+      if (v.src) URL.revokeObjectURL(v.src)
     } catch (e) {}
   })
   activeVideos.length = 0
+
+  // disponer texturas previas para liberar GPU
+  while (activeTextures.length) {
+    try {
+      const item = activeTextures.pop()
+      if (item && item.tex) {
+        try {
+          item.tex.dispose()
+        } catch (e) {}
+      }
+      if (item && item.url) {
+        try {
+          URL.revokeObjectURL(item.url)
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
 
   const size = sphereParams.radius
   const scaledX = size * sphereParams.widthScale
@@ -623,3 +674,12 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix()
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
+
+// tamaño de canvas para composiciones (videos con texto / imágenes con texto)
+const VIDEO_CANVAS_BASE = 1024 // bajar a 1024 o 512 reduce mucho uso GPU
+const VIDEO_CANVAS_SIZE = Math.max(
+  512,
+  Math.floor(VIDEO_CANVAS_BASE / Math.max(1, window.devicePixelRatio))
+)
+// frecuencia mínima de actualización de canvas (ms) cuando se compone vídeo+texto
+const CANVAS_UPDATE_MIN_MS = 66 // ≈ 15 FPS
